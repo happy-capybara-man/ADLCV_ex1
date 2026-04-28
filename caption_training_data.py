@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -22,17 +23,17 @@ TRIGGER_TOKEN = "<road_rockfall_event>"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_INLINE_B64_LEN = 180_000
 DEFAULT_PROMPT = (
-    "Carefully observe this road rockfall disaster photo and write one fluent, natural English dense caption, "
-    "about 70 to 120 words long. Describe only visible details. Focus especially on: "
-    "the physical characteristics of the fallen rocks, including their size, shape, color, rough texture, dust, mud, "
-    "and whether they are massive boulders, jagged blocks, scattered gravel, or wet muddy debris; "
-    "the exact spatial distribution of the rocks across the asphalt road, shoulder, lane markings, roadside, or slope; "
-    "how the rockfall interacts with and damages the road, such as blocked lanes, buried pavement, cracked asphalt, "
-    "crushed guardrails, damaged signs, cones, barriers, vehicles, or cleanup machinery; "
-    "the surrounding terrain, including collapsed cliff faces, steep slopes, mountains, tunnels, trees, rivers, or roadside structures; "
-    "and the weather, lighting, dust, visibility, atmosphere, camera perspective, and realistic documentary photo style. "
+    "Step 1: Carefully observe this road rockfall disaster photo. List all explicitly visible objects and visual evidence, "
+    "such as rocks, road surface, slope, guardrails, signs, cones, vehicles, machinery, trees, weather, lighting, and terrain. "
+    "Do not guess or hallucinate items that are not clearly visible. "
+    "Step 2: Based strictly on the visible evidence from Step 1, write one fluent, natural English dense caption, "
+    "about 70 to 120 words long. Focus especially on the physical characteristics of the fallen rocks, including their size, "
+    "shape, color, rough texture, dust, mud, and whether they are massive boulders, jagged blocks, scattered gravel, "
+    "or wet muddy debris; their spatial distribution across the asphalt road, shoulder, lane markings, roadside, or slope; "
+    "how the rockfall blocks, buries, cracks, or damages the road; and how it interacts with the surrounding terrain, "
+    "weather, lighting, atmosphere, and documentary camera perspective. "
     "Do not start with filler phrases like 'The image shows', 'This is a picture of', or 'In this image'. "
-    "Do not use bullet points, markdown, labels, or comma-separated tags. "
+    "Do not use bullet points, markdown, labels, or comma-separated tags in Step 2. "
     "Do not include the trigger token; it will be added separately."
 )
 FALLBACK_PROMPTS = [
@@ -55,6 +56,12 @@ SD35_ENRICHMENT = (
     "the travel surface and creating a clear spatial relationship between the roadway, the obstruction, and the surrounding terrain. "
     "Natural outdoor lighting, visible weather conditions, and a documentary camera perspective give the image a grounded photojournalistic style."
 )
+ENRICHMENTS = [
+    "The scene is framed as a realistic road rockfall event, with fallen rocks blocking the travel surface. Natural outdoor lighting gives the image a documentary style.",
+    "This documentary-style photograph captures a road hazard caused by a rockfall, detailing the debris scattered across the terrain and roadway.",
+    "Presented from a realistic photojournalistic perspective, the image highlights the physical obstruction of a mountain road due to collapsed rocks.",
+    "The outdoor daylight illuminates a hazardous road condition where loose debris and rocks have compromised the paved surface.",
+]
 
 
 def encode_image_for_api(path: Path, max_b64_len: int = MAX_INLINE_B64_LEN) -> str:
@@ -236,6 +243,9 @@ def request_caption_with_fallbacks(
 
 
 def clean_caption(caption: str) -> str:
+    if "step 2:" in caption.lower():
+        caption = re.split(r"step\s*2\s*:", caption, flags=re.IGNORECASE)[-1]
+
     caption = re.sub(r"\s+", " ", caption).strip()
     caption = caption.strip(" \t\n\r\"'`")
     caption = re.sub(r"^(caption|description)\s*:\s*", "", caption, flags=re.IGNORECASE)
@@ -250,13 +260,12 @@ def clean_caption(caption: str) -> str:
 def sd35_caption(caption: str) -> str:
     caption = clean_caption(caption)
     caption = naturalize_caption(caption)
+    enrichment = random.choice(ENRICHMENTS)
     if not caption:
-        return SD35_ENRICHMENT
-    if len(caption.split()) >= 35:
-        return caption
+        return enrichment
     if caption.endswith("."):
-        return f"{caption} {SD35_ENRICHMENT}"
-    return f"{caption}. {SD35_ENRICHMENT}"
+        return f"{caption} {enrichment}"
+    return f"{caption}. {enrichment}"
 
 def is_generated_fallback(caption: str) -> bool:
     normalized = clean_caption(caption).lower()
