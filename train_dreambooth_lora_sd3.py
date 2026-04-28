@@ -379,6 +379,23 @@ def parse_args(input_args=None):
         help="Number of denoising steps used for each validation image.",
     )
     parser.add_argument(
+        "--skip_intermediate_validation",
+        action="store_true",
+        help="Skip periodic image validation during training. Final validation behavior is unchanged.",
+    )
+    parser.add_argument(
+        "--validation_loss_steps",
+        type=int,
+        default=0,
+        help="Run no-grad validation loss evaluation every N optimizer steps. Set 0 to disable.",
+    )
+    parser.add_argument(
+        "--validation_loss_num_batches",
+        type=int,
+        default=2,
+        help="Number of mini-batches to average for each validation loss evaluation.",
+    )
+    parser.add_argument(
         "--final_validation_cpu_offload",
         action="store_true",
         help="Enable CPU offload during final validation to reduce peak GPU memory.",
@@ -1553,6 +1570,16 @@ def main(args):
         num_workers=args.dataloader_num_workers,
     )
 
+    validation_loss_dataloader = None
+    if args.validation_loss_steps > 0:
+        validation_loss_dataloader = torch.utils.data.DataLoader(
+            train_dataset,
+            batch_size=args.train_batch_size,
+            shuffle=False,
+            collate_fn=lambda examples: collate_fn(examples, args.with_prior_preservation),
+            num_workers=args.dataloader_num_workers,
+        )
+
     if not args.train_text_encoder:
         tokenizers = [tokenizer_one, tokenizer_two, tokenizer_three]
         text_encoders = [text_encoder_one, text_encoder_two, text_encoder_three]
@@ -1624,7 +1651,7 @@ def main(args):
                 )
                 latents_cache.append(vae.encode(batch["pixel_values"]).latent_dist)
 
-        if args.validation_prompt is None:
+        if args.validation_prompt is None and args.validation_loss_steps <= 0:
             del vae
             free_memory()
 
@@ -1646,23 +1673,47 @@ def main(args):
 
     # Prepare everything with our `accelerator`.
     if args.train_text_encoder:
-        (
-            transformer,
-            text_encoder_one,
-            text_encoder_two,
-            optimizer,
-            train_dataloader,
-            lr_scheduler,
-        ) = accelerator.prepare(
-            transformer, text_encoder_one, text_encoder_two, optimizer, train_dataloader, lr_scheduler
-        )
+        if validation_loss_dataloader is not None:
+            (
+                transformer,
+                text_encoder_one,
+                text_encoder_two,
+                optimizer,
+                train_dataloader,
+                validation_loss_dataloader,
+                lr_scheduler,
+            ) = accelerator.prepare(
+                transformer,
+                text_encoder_one,
+                text_encoder_two,
+                optimizer,
+                train_dataloader,
+                validation_loss_dataloader,
+                lr_scheduler,
+            )
+        else:
+            (
+                transformer,
+                text_encoder_one,
+                text_encoder_two,
+                optimizer,
+                train_dataloader,
+                lr_scheduler,
+            ) = accelerator.prepare(
+                transformer, text_encoder_one, text_encoder_two, optimizer, train_dataloader, lr_scheduler
+            )
         assert text_encoder_one is not None
         assert text_encoder_two is not None
         assert text_encoder_three is not None
     else:
-        transformer, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
-            transformer, optimizer, train_dataloader, lr_scheduler
-        )
+        if validation_loss_dataloader is not None:
+            transformer, optimizer, train_dataloader, validation_loss_dataloader, lr_scheduler = accelerator.prepare(
+                transformer, optimizer, train_dataloader, validation_loss_dataloader, lr_scheduler
+            )
+        else:
+            transformer, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
+                transformer, optimizer, train_dataloader, lr_scheduler
+            )
 
     # We need to recalculate our total training steps as the size of the training dataloader may have changed.
     num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
@@ -1737,6 +1788,149 @@ def main(args):
         while len(sigma.shape) < n_dim:
             sigma = sigma.unsqueeze(-1)
         return sigma
+
+    validation_loss_iterator = iter(validation_loss_dataloader) if validation_loss_dataloader is not None else None
+
+    def next_validation_loss_batch():
+        nonlocal validation_loss_iterator
+        if validation_loss_dataloader is None:
+            return None
+        try:
+            return next(validation_loss_iterator)
+        except StopIteration:
+            validation_loss_iterator = iter(validation_loss_dataloader)
+            return next(validation_loss_iterator)
+
+    def compute_validation_loss_no_grad():
+        if validation_loss_dataloader is None:
+            return None
+
+        transformer_was_training = transformer.training
+        transformer.eval()
+
+        te1_was_training = te2_was_training = False
+        if args.train_text_encoder:
+            te1_was_training = text_encoder_one.training
+            te2_was_training = text_encoder_two.training
+            text_encoder_one.eval()
+            text_encoder_two.eval()
+
+        losses = []
+        with torch.no_grad():
+            for _ in range(max(1, args.validation_loss_num_batches)):
+                batch = next_validation_loss_batch()
+                if batch is None:
+                    break
+
+                prompts = batch["prompts"]
+
+                if train_dataset.custom_instance_prompts:
+                    if not args.train_text_encoder:
+                        prompt_embeds_eval, pooled_prompt_embeds_eval = compute_text_embeddings(
+                            prompts, text_encoders, tokenizers
+                        )
+                    else:
+                        tokens_one_eval = tokenize_prompt(tokenizer_one, prompts)
+                        tokens_two_eval = tokenize_prompt(tokenizer_two, prompts)
+                        tokens_three_eval = tokenize_prompt(tokenizer_three, prompts)
+                        prompt_embeds_eval, pooled_prompt_embeds_eval = encode_prompt(
+                            text_encoders=[text_encoder_one, text_encoder_two, text_encoder_three],
+                            tokenizers=[None, None, None],
+                            prompt=prompts,
+                            max_sequence_length=args.max_sequence_length,
+                            text_input_ids_list=[tokens_one_eval, tokens_two_eval, tokens_three_eval],
+                        )
+                else:
+                    if args.train_text_encoder:
+                        prompt_embeds_eval, pooled_prompt_embeds_eval = encode_prompt(
+                            text_encoders=[text_encoder_one, text_encoder_two, text_encoder_three],
+                            tokenizers=[None, None, tokenizer_three],
+                            prompt=args.instance_prompt,
+                            max_sequence_length=args.max_sequence_length,
+                            text_input_ids_list=[tokens_one, tokens_two, tokens_three],
+                        )
+                    else:
+                        prompt_embeds_eval = prompt_embeds
+                        pooled_prompt_embeds_eval = pooled_prompt_embeds
+
+                pixel_values = batch["pixel_values"].to(accelerator.device, dtype=vae.dtype)
+                model_input_eval = vae.encode(pixel_values).latent_dist.sample()
+                model_input_eval = (model_input_eval - vae_config_shift_factor) * vae_config_scaling_factor
+                model_input_eval = model_input_eval.to(dtype=weight_dtype)
+
+                noise_eval = torch.randn_like(model_input_eval)
+                bsz_eval = model_input_eval.shape[0]
+                u_eval = compute_density_for_timestep_sampling(
+                    weighting_scheme=args.weighting_scheme,
+                    batch_size=bsz_eval,
+                    logit_mean=args.logit_mean,
+                    logit_std=args.logit_std,
+                    mode_scale=args.mode_scale,
+                )
+                indices_eval = (u_eval * noise_scheduler_copy.config.num_train_timesteps).long()
+                timesteps_eval = noise_scheduler_copy.timesteps[indices_eval].to(device=model_input_eval.device)
+                sigmas_eval = get_sigmas(timesteps_eval, n_dim=model_input_eval.ndim, dtype=model_input_eval.dtype)
+                noisy_model_input_eval = (1.0 - sigmas_eval) * model_input_eval + sigmas_eval * noise_eval
+
+                model_pred_eval = transformer(
+                    hidden_states=noisy_model_input_eval,
+                    timestep=timesteps_eval,
+                    encoder_hidden_states=prompt_embeds_eval,
+                    pooled_projections=pooled_prompt_embeds_eval,
+                    return_dict=False,
+                )[0]
+
+                if args.precondition_outputs:
+                    model_pred_eval = model_pred_eval * (-sigmas_eval) + noisy_model_input_eval
+
+                weighting_eval = compute_loss_weighting_for_sd3(
+                    weighting_scheme=args.weighting_scheme,
+                    sigmas=sigmas_eval,
+                )
+
+                if args.precondition_outputs:
+                    target_eval = model_input_eval
+                else:
+                    target_eval = noise_eval - model_input_eval
+
+                if args.with_prior_preservation:
+                    model_pred_eval, model_pred_prior_eval = torch.chunk(model_pred_eval, 2, dim=0)
+                    target_eval, target_prior_eval = torch.chunk(target_eval, 2, dim=0)
+
+                    prior_loss_eval = torch.mean(
+                        (
+                            weighting_eval.float()
+                            * (model_pred_prior_eval.float() - target_prior_eval.float()) ** 2
+                        ).reshape(target_prior_eval.shape[0], -1),
+                        1,
+                    )
+                    prior_loss_eval = prior_loss_eval.mean()
+
+                loss_eval = torch.mean(
+                    (
+                        weighting_eval.float() * (model_pred_eval.float() - target_eval.float()) ** 2
+                    ).reshape(target_eval.shape[0], -1),
+                    1,
+                )
+                loss_eval = loss_eval.mean()
+
+                if args.with_prior_preservation:
+                    loss_eval = loss_eval + args.prior_loss_weight * prior_loss_eval
+
+                losses.append(loss_eval.detach())
+
+        if transformer_was_training:
+            transformer.train()
+        if args.train_text_encoder:
+            if te1_was_training:
+                text_encoder_one.train()
+            if te2_was_training:
+                text_encoder_two.train()
+
+        if not losses:
+            return None
+
+        return torch.stack(losses).mean().item()
 
     for epoch in range(first_epoch, args.num_train_epochs):
         transformer.train()
@@ -1914,11 +2108,26 @@ def main(args):
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
 
+            if (
+                args.validation_loss_steps > 0
+                and accelerator.sync_gradients
+                and global_step > 0
+                and global_step % args.validation_loss_steps == 0
+            ):
+                val_loss = compute_validation_loss_no_grad()
+                if val_loss is not None and accelerator.is_main_process:
+                    accelerator.log({"validation/loss": val_loss}, step=global_step)
+                    logger.info(f"[RANK 0] step={global_step} validation_loss={val_loss:.6f}")
+
             if global_step >= args.max_train_steps:
                 break
 
         if accelerator.is_main_process:
-            if args.validation_prompt is not None and epoch % args.validation_epochs == 0:
+            if (
+                args.validation_prompt is not None
+                and (not args.skip_intermediate_validation)
+                and epoch % args.validation_epochs == 0
+            ):
                 if not args.train_text_encoder:
                     # create pipeline
                     text_encoder_one, text_encoder_two, text_encoder_three = load_text_encoders(
