@@ -24,11 +24,8 @@ eval_results/
 *.log
 
 # Local datasets / raw assets
-training_data/
 training_data_min/
 training_data_min_tbtest/
 training_data_smoketest/
 training_data_smoketest2/
-rock/
-石頭/
 
