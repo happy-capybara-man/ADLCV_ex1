@@ -16,18 +16,44 @@ from dotenv import load_dotenv
 from PIL import Image
 
 
-INVOKE_URL = "https://ai.api.nvidia.com/v1/vlm/google/paligemma"
+INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+DEFAULT_MODEL = "google/gemma-3-27b-it"
 TRIGGER_TOKEN = "<road_rockfall_event>"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_INLINE_B64_LEN = 180_000
-DEFAULT_PROMPT = "Describe this road rockfall event image in one concise English caption."
+DEFAULT_PROMPT = (
+    "Carefully observe this road rockfall disaster photo and write one fluent, natural English dense caption, "
+    "about 70 to 120 words long. Describe only visible details. Focus especially on: "
+    "the physical characteristics of the fallen rocks, including their size, shape, color, rough texture, dust, mud, "
+    "and whether they are massive boulders, jagged blocks, scattered gravel, or wet muddy debris; "
+    "the exact spatial distribution of the rocks across the asphalt road, shoulder, lane markings, roadside, or slope; "
+    "how the rockfall interacts with and damages the road, such as blocked lanes, buried pavement, cracked asphalt, "
+    "crushed guardrails, damaged signs, cones, barriers, vehicles, or cleanup machinery; "
+    "the surrounding terrain, including collapsed cliff faces, steep slopes, mountains, tunnels, trees, rivers, or roadside structures; "
+    "and the weather, lighting, dust, visibility, atmosphere, camera perspective, and realistic documentary photo style. "
+    "Do not start with filler phrases like 'The image shows', 'This is a picture of', or 'In this image'. "
+    "Do not use bullet points, markdown, labels, or comma-separated tags. "
+    "Do not include the trigger token; it will be added separately."
+)
 FALLBACK_PROMPTS = [
-    "What visible road rockfall, rocks, debris, and outdoor scene details are shown? Answer as a short caption.",
-    "Write a short Stable Diffusion caption for this road rockfall event photo, focusing on visible rocks, debris, road, and outdoor scene details.",
+    (
+        "Write a single 70 to 120 word English dense caption for this road rockfall scene. "
+        "Prioritize the rocks' physical size, shape, texture, color, dust or mud, their distribution over the road, "
+        "blocked lanes, buried or cracked asphalt, damaged guardrails, signs, cones, vehicles, or cleanup equipment, "
+        "plus the collapsed slope, cliff, mountain road, tunnel, trees, weather, lighting, atmosphere, and camera angle. "
+        "Start directly with the scene description and avoid filler openings."
+    ),
+    (
+        "Create a natural English SD3.5 training caption for this image in one paragraph. "
+        "Describe the road rockfall as a physical disaster scene: rock sizes and textures, debris placement, road blockage, "
+        "damage to pavement or roadside infrastructure, terrain context, weather, light, mood, and documentary camera perspective."
+    ),
 ]
 RETRY_ATTEMPTS = 2
-GENERIC_FALLBACK_CAPTION = (
-    "large rocks and debris near a mountain road, rockfall event, real photograph, outdoor, natural lighting"
+SD35_ENRICHMENT = (
+    "The scene is framed as a realistic road rockfall event, with fallen rocks and loose debris blocking or covering "
+    "the travel surface and creating a clear spatial relationship between the roadway, the obstruction, and the surrounding terrain. "
+    "Natural outdoor lighting, visible weather conditions, and a documentary camera perspective give the image a grounded photojournalistic style."
 )
 
 
@@ -114,34 +140,46 @@ def extract_text(payload: Any) -> str:
 
 def request_caption(
     image_path: Path,
+    invoke_url: str,
+    model: str,
     api_key: str,
     prompt: str,
     max_tokens: int,
     temperature: float,
     top_p: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    stream: bool,
     timeout: int,
 ) -> str:
     image_b64 = encode_image_for_api(image_path)
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Accept": "text/event-stream",
+        "Accept": "text/event-stream" if stream else "application/json",
+        "Content-Type": "application/json",
     }
     payload = {
+        "model": model,
         "messages": [
             {
                 "role": "user",
-                "content": f'{prompt} <img src="data:image/jpeg;base64,{image_b64}" />',
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                ],
             }
         ],
         "max_tokens": max_tokens,
         "temperature": temperature,
         "top_p": top_p,
-        "stream": True,
+        "frequency_penalty": frequency_penalty,
+        "presence_penalty": presence_penalty,
+        "stream": stream,
     }
 
-    response = requests.post(INVOKE_URL, headers=headers, json=payload, timeout=timeout)
+    response = requests.post(invoke_url, headers=headers, json=payload, timeout=timeout)
     response.raise_for_status()
-    caption = extract_stream_text(response)
+    caption = extract_stream_text(response) if stream else extract_text(response.json()).strip()
     if not caption:
         raise RuntimeError(f"Empty caption returned for {image_path}")
     return caption
@@ -149,11 +187,16 @@ def request_caption(
 
 def request_caption_with_fallbacks(
     image_path: Path,
+    invoke_url: str,
+    model: str,
     api_key: str,
     prompts: list[str],
     max_tokens: int,
     temperature: float,
     top_p: float,
+    frequency_penalty: float,
+    presence_penalty: float,
+    stream: bool,
     timeout: int,
 ) -> str:
     last_error = ""
@@ -163,11 +206,16 @@ def request_caption_with_fallbacks(
             try:
                 candidate = request_caption(
                     image_path=image_path,
+                    invoke_url=invoke_url,
+                    model=model,
                     api_key=api_key,
                     prompt=prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     top_p=top_p,
+                    frequency_penalty=frequency_penalty,
+                    presence_penalty=presence_penalty,
+                    stream=stream,
                     timeout=timeout,
                 )
             except (requests.RequestException, RuntimeError) as exc:
@@ -181,19 +229,102 @@ def request_caption_with_fallbacks(
 
             last_error = f"unusable caption: {candidate!r}"
             print(f"  retry {attempt}/{RETRY_ATTEMPTS} failed: {last_error}")
+            break
 
     print(f"  using generic fallback caption for {image_path.name}: {last_error}")
-    return GENERIC_FALLBACK_CAPTION
+    return build_generic_fallback_caption(image_path)
 
 
 def clean_caption(caption: str) -> str:
     caption = re.sub(r"\s+", " ", caption).strip()
     caption = caption.strip(" \t\n\r\"'`")
     caption = re.sub(r"^(caption|description)\s*:\s*", "", caption, flags=re.IGNORECASE)
-    caption = re.sub(r"^in this image (we can see|there is|there are)\s+", "", caption, flags=re.IGNORECASE)
-    caption = re.sub(r"^this image shows\s+", "", caption, flags=re.IGNORECASE)
-    caption = caption.rstrip(" .")
+    caption = re.sub(r"^in this image (i can see|we can see)\s+", "", caption, flags=re.IGNORECASE)
+    caption = re.sub(r"^in this image (there is|there are)\s+", "", caption, flags=re.IGNORECASE)
+    caption = re.sub(r"^(the image shows|this image shows)\s+", "", caption, flags=re.IGNORECASE)
+    caption = re.sub(r"\bfew\b", "several", caption, flags=re.IGNORECASE)
+    caption = caption.rstrip()
     return caption
+
+
+def sd35_caption(caption: str) -> str:
+    caption = clean_caption(caption)
+    caption = naturalize_caption(caption)
+    if not caption:
+        return SD35_ENRICHMENT
+    if len(caption.split()) >= 35:
+        return caption
+    if caption.endswith("."):
+        return f"{caption} {SD35_ENRICHMENT}"
+    return f"{caption}. {SD35_ENRICHMENT}"
+
+def is_generated_fallback(caption: str) -> bool:
+    normalized = clean_caption(caption).lower()
+    return any(
+        phrase in normalized
+        for phrase in [
+            "a detailed road rockfall scene shows large rugged gray rocks",
+            "suitable for a detailed road hazard training caption",
+        ]
+    )
+
+def naturalize_caption(caption: str) -> str:
+    if not caption:
+        return caption
+
+    parts = list(dict.fromkeys(clean_list_item(part) for part in caption.split(",") if part.strip(" .")))
+    parts = [part for part in parts if part]
+    if len(parts) >= 3 and "." not in caption:
+        return f"The image shows {join_english_list(parts)}."
+
+    return caption[0].upper() + caption[1:] if caption[0].islower() else caption
+
+
+def clean_list_item(item: str) -> str:
+    item = item.strip(" .")
+    item = re.sub(r"^(the image shows|this image shows)\s+", "", item, flags=re.IGNORECASE)
+    item = re.sub(r"^and\s+", "", item, flags=re.IGNORECASE)
+    item = re.sub(r"^there (is|are)\s+", "", item, flags=re.IGNORECASE)
+    return item
+
+
+def join_english_list(items: list[str]) -> str:
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return f"{', '.join(items[:-1])}, and {items[-1]}"
+
+
+def build_generic_fallback_caption(image_path: Path) -> str:
+    brightness, color_cast, orientation = image_hints(image_path)
+    return (
+        f"A {orientation} realistic photograph shows a road rockfall scene with large rugged gray rocks, loose gravel, "
+        f"brown dirt, and scattered debris spread across a paved mountain road. The rocks have rough fractured surfaces "
+        f"and irregular edges, contrasting with the smoother roadway and the natural roadside terrain. The image has "
+        f"{brightness} outdoor lighting with a subtle {color_cast} color cast, giving the scene a grounded documentary "
+        f"camera perspective suitable for a detailed road hazard training caption."
+    )
+
+
+def image_hints(image_path: Path) -> tuple[str, str, str]:
+    with Image.open(image_path) as image:
+        image = image.convert("RGB")
+        width, height = image.size
+        resized = image.resize((1, 1), Image.LANCZOS)
+        red, green, blue = resized.getpixel((0, 0))
+
+    luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue)
+    if luminance >= 170:
+        brightness = "bright daylight"
+    elif luminance >= 95:
+        brightness = "diffused daylight"
+    else:
+        brightness = "dim, low-contrast daylight"
+
+    strongest_channel = max((red, "warm brown"), (green, "greenish natural"), (blue, "cool gray-blue"))[1]
+    orientation = "wide landscape" if width >= height else "vertical"
+    return brightness, strongest_channel, orientation
 
 
 def with_trigger(caption: str, trigger_token: str) -> str:
@@ -233,19 +364,25 @@ def write_outputs(entries: list[dict[str, str]], json_path: Path, jsonl_path: Pa
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Caption training_data images with NVIDIA PaliGemma.")
+    parser = argparse.ArgumentParser(description="Caption training_data images with NVIDIA chat/completions VLM models.")
     parser.add_argument("--data-dir", type=Path, default=Path("training_data"))
     parser.add_argument("--output-json", type=Path, default=Path("metadata.json"))
     parser.add_argument("--output-jsonl", type=Path, default=Path("metadata.jsonl"))
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
+    parser.add_argument("--invoke-url", default=None, help="Override the NVIDIA VLM endpoint URL.")
+    parser.add_argument("--model", default=None, help="Override the NVIDIA VLM model name.")
     parser.add_argument("--trigger-token", default=TRIGGER_TOKEN)
     parser.add_argument("--api-key-env", default="NVIDIA_API_KEY")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT)
-    parser.add_argument("--max-tokens", type=int, default=96)
+    parser.add_argument("--max-tokens", type=int, default=512)
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--top-p", type=float, default=0.7)
+    parser.add_argument("--frequency-penalty", type=float, default=0.0)
+    parser.add_argument("--presence-penalty", type=float, default=0.0)
+    parser.add_argument("--no-stream", action="store_true", help="Request a normal JSON response instead of SSE streaming.")
     parser.add_argument("--timeout", type=int, default=90)
     parser.add_argument("--sleep", type=float, default=0.25)
+    parser.add_argument("--raw-captions", action="store_true", help="Write raw VLM captions without SD3.5 enrichment.")
     parser.add_argument("--force", action="store_true", help="Regenerate captions that already exist in output JSON.")
     return parser.parse_args()
 
@@ -258,6 +395,9 @@ def main() -> int:
     if not api_key:
         print(f"Missing API key. Set {args.api_key_env} before running.", file=sys.stderr)
         return 2
+
+    invoke_url = args.invoke_url or os.environ.get("NVIDIA_VLM_INVOKE_URL", INVOKE_URL)
+    model = args.model or os.environ.get("NVIDIA_VLM_MODEL", DEFAULT_MODEL)
 
     if not args.data_dir.exists():
         print(f"Data directory not found: {args.data_dir}", file=sys.stderr)
@@ -273,7 +413,7 @@ def main() -> int:
 
     for index, image_path in enumerate(images, start=1):
         previous = existing.get(image_path.name)
-        if previous and not args.force:
+        if previous and not args.force and not is_generated_fallback(previous["text"]):
             entry = {"file_name": image_path.name, "text": with_trigger(previous["text"], args.trigger_token)}
             print(f"[{index:03d}/{len(images):03d}] reuse {image_path.name}")
         else:
@@ -281,13 +421,20 @@ def main() -> int:
             prompts = [args.prompt, *[prompt for prompt in FALLBACK_PROMPTS if prompt != args.prompt]]
             caption = request_caption_with_fallbacks(
                 image_path=image_path,
+                invoke_url=invoke_url,
+                model=model,
                 api_key=api_key,
                 prompts=prompts,
                 max_tokens=args.max_tokens,
                 temperature=args.temperature,
                 top_p=args.top_p,
+                frequency_penalty=args.frequency_penalty,
+                presence_penalty=args.presence_penalty,
+                stream=not args.no_stream,
                 timeout=args.timeout,
             )
+            if not args.raw_captions:
+                caption = sd35_caption(caption)
             entry = {"file_name": image_path.name, "text": with_trigger(caption, args.trigger_token)}
             time.sleep(args.sleep)
 
