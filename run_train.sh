@@ -23,7 +23,7 @@ source "${SCRIPT_DIR}/.venv/bin/activate"
 MIN_DATA="${MIN_DATA:-0}"
 
 # Select GPU. Default uses GPU 1 (RTX 3090 on this machine) to avoid 2080 Ti OOM.
-GPU_ID="${GPU_ID:-1}"
+GPU_ID="${GPU_ID:-0}"
 if command -v nvidia-smi >/dev/null 2>&1; then
     if ! nvidia-smi -i "${GPU_ID}" >/dev/null 2>&1; then
         echo "[ERROR] GPU_ID=${GPU_ID} is not available"
@@ -117,29 +117,30 @@ fi
 # --------------------------------------------------------------------------
 # 2. Training hyperparameters
 # --------------------------------------------------------------------------
-MODEL_ID="stabilityai/stable-diffusion-3.5-medium"
-INSTANCE_DATA_DIR="training_data"
-OUTPUT_DIR="lora_output"
-TRIGGER_TOKEN="<road_rockfall_event>"
+MODEL_ID="${MODEL_ID:-stabilityai/stable-diffusion-3.5-medium}"
+INSTANCE_DATA_DIR="${INSTANCE_DATA_DIR:-training_data}"
+OUTPUT_DIR="${OUTPUT_DIR:-lora_output}"
+LOGGING_DIR="${LOGGING_DIR:-logs}"
+TRIGGER_TOKEN="${TRIGGER_TOKEN:-<road_rockfall_event>}"
 METADATA_JSONL="${METADATA_JSONL:-}"
 SKIP_INTERMEDIATE_VALIDATION="${SKIP_INTERMEDIATE_VALIDATION:-1}"
 VALIDATION_LOSS_STEPS="${VALIDATION_LOSS_STEPS:-10}"
 VALIDATION_LOSS_NUM_BATCHES="${VALIDATION_LOSS_NUM_BATCHES:-2}"
 VALIDATION_EPOCHS="${VALIDATION_EPOCHS:-20}"
 
-INSTANCE_PROMPT="${TRIGGER_TOKEN}, road blocked by rockfall debris, real photograph, outdoor"
-VALIDATION_PROMPT="${TRIGGER_TOKEN}, large boulder blocking mountain highway, real photograph"
-VALIDATION_INFER_STEPS=20
+INSTANCE_PROMPT="${INSTANCE_PROMPT:-${TRIGGER_TOKEN}, road blocked by rockfall debris, real photograph, outdoor}"
+VALIDATION_PROMPT="${VALIDATION_PROMPT:-${TRIGGER_TOKEN}, large boulder blocking mountain highway, real photograph}"
+VALIDATION_INFER_STEPS="${VALIDATION_INFER_STEPS:-20}"
 
-RESOLUTION=1024
-TRAIN_BATCH_SIZE=1
-GRAD_ACCUM=4            # effective batch = 4
-LR=1e-4
-LR_WARMUP=100
-MAX_STEPS=1000
-RANK=16                 # LoRA rank; 16 is a good balance for ~90 images
-CKPT_STEPS=200          # save every 200 steps → 5 checkpoints total
-SEED=42
+RESOLUTION="${RESOLUTION:-1024}"
+TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
+GRAD_ACCUM="${GRAD_ACCUM:-4}"            # effective batch = 4
+LR="${LR:-1e-4}"
+LR_WARMUP="${LR_WARMUP:-100}"
+MAX_STEPS="${MAX_STEPS:-1000}"
+RANK="${RANK:-16}"                       # LoRA rank; 16 is a good balance for ~90 images
+CKPT_STEPS="${CKPT_STEPS:-200}"          # save every 200 steps
+SEED="${SEED:-42}"
 
 if [ "${MIN_DATA}" = "1" ]; then
     INSTANCE_DATA_DIR="training_data_min"
@@ -192,7 +193,7 @@ if [ "${SKIP_INTERMEDIATE_VALIDATION}" = "1" ]; then
 fi
 
 mkdir -p "${OUTPUT_DIR}"
-mkdir -p "${OUTPUT_DIR}/logs"
+mkdir -p "${OUTPUT_DIR}/${LOGGING_DIR}"
 
 TRAIN_DATA_ARGS=(--instance_data_dir="${INSTANCE_DATA_DIR}")
 if [ -n "${METADATA_JSONL}" ]; then
@@ -243,8 +244,9 @@ echo "  GPU    : physical ${GPU_ID} via CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVI
 echo "           accelerate logical device=0 (masked single GPU)"
 echo "  Data   : ${INSTANCE_DATA_DIR}"
 echo "  Output : ${OUTPUT_DIR}"
+echo "  TB Logs: ${OUTPUT_DIR}/${LOGGING_DIR}"
 echo "  Trigger: ${TRIGGER_TOKEN}"
-echo "  Steps  : ${MAX_STEPS}  (LR=${LR}, Rank=${RANK})"
+echo "  Steps  : ${MAX_STEPS}  (LR=${LR}, Rank=${RANK}, CKPT=${CKPT_STEPS})"
 echo "  ValLoss: every ${VALIDATION_LOSS_STEPS} steps, ${VALIDATION_LOSS_NUM_BATCHES} batch(es)"
 echo "  ValImg : skip_intermediate=${SKIP_INTERMEDIATE_VALIDATION}, final_validation=enabled"
 echo "================================================================"
@@ -272,10 +274,10 @@ accelerate launch "${TRAIN_SCRIPT}" \
     --checkpointing_steps=${CKPT_STEPS} \
     --seed=${SEED} \
     "${VALIDATION_ARGS[@]}" \
-    --logging_dir="logs" \
+    --logging_dir="${LOGGING_DIR}" \
     --report_to="tensorboard"
 
 echo "================================================================"
 echo "  Training complete!  LoRA weights → ${OUTPUT_DIR}/"
-echo "  To view TensorBoard: tensorboard --logdir ${OUTPUT_DIR}/logs"
+echo "  To view TensorBoard: tensorboard --logdir ${OUTPUT_DIR}/${LOGGING_DIR}"
 echo "================================================================"

@@ -22,7 +22,7 @@ from PIL import Image
 # ---------------------------------------------------------------------------
 TRIGGER_TOKEN = "<road_rockfall_event>"
 TARGET_SIZE   = 1024
-OUTPUT_DIR    = Path("training_data")
+OUTPUT_DIR    = Path("final_data")
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 

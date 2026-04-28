@@ -17,8 +17,11 @@ wheels/
 *.zip
 
 # Training outputs and logs
+experiments/
+experiment_logs/
 lora_output/
 lora_output_min/
+generated_images/
 generated_preview_lora/
 eval_results/
 *.log

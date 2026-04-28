@@ -248,6 +248,7 @@ def clean_caption(caption: str) -> str:
 
     caption = re.sub(r"\s+", " ", caption).strip()
     caption = caption.strip(" \t\n\r\"'`")
+    caption = re.sub(r"^dense\s+caption\*{0,2}\s*", "", caption, flags=re.IGNORECASE)
     caption = re.sub(r"^(caption|description)\s*:\s*", "", caption, flags=re.IGNORECASE)
     caption = re.sub(r"^in this image (i can see|we can see)\s+", "", caption, flags=re.IGNORECASE)
     caption = re.sub(r"^in this image (there is|there are)\s+", "", caption, flags=re.IGNORECASE)
