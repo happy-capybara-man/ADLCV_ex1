@@ -1,0 +1,15 @@
+{
+  "trigger_token": "<road_rockfall_event>",
+  "base_prompts": [
+    "a massive boulder blocking a mountain highway, road debris scattered on asphalt, daylight, real photograph",
+    "rockfall debris covering a two-lane mountain road, aerial view, real photograph",
+    "fresh landslide across a highway with fallen rocks and dust cloud, real photograph",
+    "emergency workers clearing rockfall from a mountain road, safety vests visible, real photograph",
+    "roadblock caused by large rocks fallen from a cliff face, overcast sky, real photograph",
+    "multiple boulders and rock fragments scattered across mountain road after rockfall, real photograph",
+    "traffic stopped due to large rockfall on a narrow mountain road, cars waiting, real photograph",
+    "close-up of broken rock debris and gravel covering asphalt road surface, real photograph",
+    "highway completely closed due to major landslide with rockfall, warning signs visible, real photograph",
+    "evening scene of large rocks blocking a coastal cliff road, warm golden sky, real photograph"
+  ]
+}
