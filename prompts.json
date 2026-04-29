@@ -1,10 +1,10 @@
 {
-  "trigger_token": "<road_rockfall_event>",
+  "trigger_token": "zwxrockfall, ",
   "base_prompts": [
     "a realistic documentary photo of an empty two-lane mountain road completely blocked by natural irregular gray and tan boulders, jagged rock fragments, muddy gravel, wet asphalt, collapsed steep slope, no people, no vehicles, no signs",
     "an empty winding asphalt road carved into a steep forested mountainside, fresh natural rockfall spilling from an exposed cliff face across both lanes, rough irregular stones, dust in the air, overcast daylight, real photograph",
     "massive natural angular boulders and scattered gravel covering a narrow mountain highway, yellow lane markings partly buried under wet mud and rock debris, steep rocky slope above, ground-level documentary photo, no traffic",
-    "rockfall debris covering a damp mountain road near a dark tunnel entrance, uneven piles of natural stone and muddy sediment, misty overcast weather, realistic disaster photograph, no cones, no warning signs, no text",
+    "a wet mountain road partially blocked by fresh natural rockfall from a steep hillside, irregular gray and reddish-brown boulders with muddy gravel scattered across both lanes, yellow center lines partly buried, misty overcast daylight, realistic documentary photograph, no people, no vehicles, no warning signs",
     "large reddish-brown natural boulders fallen from a canyon wall onto a curved empty road, dusty asphalt, loose gravel, sparse vegetation on steep slopes, realistic highway rockfall photo, no cars, no people",
     "a mountain road fully obstructed by a fresh landslide of irregular rocks, wet mud, gravel, and fractured stone from the hillside, quiet blocked roadway, natural debris only, documentary real photograph",
     "a close low-angle view of rough fractured natural rocks and gravel covering wet asphalt, cracked road surface beneath the debris, collapsed steep slope in the background, realistic photo, no text, no manmade objects",

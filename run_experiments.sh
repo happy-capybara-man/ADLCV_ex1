@@ -13,7 +13,7 @@ cd "${SCRIPT_DIR}"
 
 GPU_ID="${GPU_ID:-0}"
 METADATA_JSONL="${METADATA_JSONL:-metadata.jsonl}"
-CKPT_STEPS="${CKPT_STEPS:-200}"
+CKPT_STEPS="${CKPT_STEPS:-50}"
 LOG_ROOT="${LOG_ROOT:-experiment_logs}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-experiments}"
 LOGGING_DIR="${LOGGING_DIR:-logs}"
@@ -74,10 +74,10 @@ run_experiment() {
 
 # Keep max steps fixed so rank/lr comparisons are controlled.
 # Use checkpoints to compare intermediate training steps within each experiment.
-run_experiment "baseline" 16 "1e-4" 1000
-run_experiment "exp1_rank8" 8 "1e-4" 1000
-run_experiment "exp2_lr5e-5" 16 "5e-5" 1000
-run_experiment "exp3_lr8e-5" 16 "8e-5" 1000
+run_experiment "baseline" 16 "1e-4" 300
+run_experiment "exp1_rank8" 8 "1e-4" 300
+run_experiment "exp2_lr5e-5" 16 "5e-5" 300
+run_experiment "exp3_lr8e-5" 16 "8e-5" 300
 
 echo "================================================================"
 echo "  All experiments completed."

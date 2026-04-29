@@ -20,7 +20,7 @@ from PIL import Image
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-TRIGGER_TOKEN = "<road_rockfall_event>"
+TRIGGER_TOKEN = "zwxrockfall"
 TARGET_SIZE   = 1024
 OUTPUT_DIR    = Path("final_data")
 

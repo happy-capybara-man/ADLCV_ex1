@@ -19,7 +19,7 @@ from PIL import Image
 
 INVOKE_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 DEFAULT_MODEL = "google/gemma-3-27b-it"
-TRIGGER_TOKEN = "<road_rockfall_event>"
+TRIGGER_TOKEN = "zwxrockfall"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 MAX_INLINE_B64_LEN = 180_000
 DEFAULT_PROMPT = (

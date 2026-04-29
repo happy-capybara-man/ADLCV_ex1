@@ -121,7 +121,7 @@ MODEL_ID="${MODEL_ID:-stabilityai/stable-diffusion-3.5-medium}"
 INSTANCE_DATA_DIR="${INSTANCE_DATA_DIR:-training_data}"
 OUTPUT_DIR="${OUTPUT_DIR:-lora_output}"
 LOGGING_DIR="${LOGGING_DIR:-logs}"
-TRIGGER_TOKEN="${TRIGGER_TOKEN:-<road_rockfall_event>}"
+TRIGGER_TOKEN="${TRIGGER_TOKEN:-zwxrockfall}"
 METADATA_JSONL="${METADATA_JSONL:-}"
 SKIP_INTERMEDIATE_VALIDATION="${SKIP_INTERMEDIATE_VALIDATION:-1}"
 VALIDATION_LOSS_STEPS="${VALIDATION_LOSS_STEPS:-10}"
@@ -137,9 +137,9 @@ TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-4}"            # effective batch = 4
 LR="${LR:-1e-4}"
 LR_WARMUP="${LR_WARMUP:-100}"
-MAX_STEPS="${MAX_STEPS:-1000}"
+MAX_STEPS="${MAX_STEPS:-600}"
 RANK="${RANK:-16}"                       # LoRA rank; 16 is a good balance for ~90 images
-CKPT_STEPS="${CKPT_STEPS:-200}"          # save every 200 steps
+CKPT_STEPS="${CKPT_STEPS:-100}"           # save every 100 steps
 SEED="${SEED:-42}"
 
 if [ "${MIN_DATA}" = "1" ]; then

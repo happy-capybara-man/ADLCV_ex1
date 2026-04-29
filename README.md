@@ -5,7 +5,7 @@
 核心目標是讓 SD3.5 Medium 學會一個可由 trigger token 控制的道路落石事件概念：
 
 ```text
-<road_rockfall_event>
+zwxrockfall
 ```
 
 訓練後，模型應能在 prompt 中看到這個 token 時，更穩定地生成「真實攝影風格的道路落石災害場景」，包含大型岩塊、碎石、泥土、山坡、道路阻斷、柏油路面、車道線、護欄或地形脈絡等元素。
@@ -15,7 +15,7 @@
 - 使用模型：`stabilityai/stable-diffusion-3.5-medium`
 - 微調方法：DreamBooth LoRA for SD3
 - 主題概念：road rockfall event / mountain road blocked by rocks
-- Trigger token：`<road_rockfall_event>`
+- Trigger token：`zwxrockfall`
 - 目前訓練資料：`training_data/`，共 30 張影像
 - Caption 格式：Hugging Face imagefolder metadata，欄位為 `file_name` 與 `text`
 - 主要訓練腳本：`run_train.sh`
@@ -199,7 +199,7 @@ https://integrate.api.nvidia.com/v1/chat/completions
 輸出格式：
 
 ```json
-{"file_name": "img_0001.jpg", "text": "<road_rockfall_event>, A substantial rockfall has overwhelmed a section of roadway..."}
+{"file_name": "img_0001.jpg", "text": "zwxrockfall, A substantial rockfall has overwhelmed a section of roadway..."}
 ```
 
 執行方式：
@@ -241,7 +241,7 @@ uv run python caption_training_data.py \
 | Base model | `stabilityai/stable-diffusion-3.5-medium` |
 | Instance data | `training_data` |
 | Output dir | `lora_output` |
-| Trigger token | `<road_rockfall_event>` |
+| Trigger token | `zwxrockfall` |
 | Resolution | `1024` |
 | Batch size | `1` |
 | Gradient accumulation | `4` |
@@ -287,7 +287,7 @@ MIN_DATA=1 ./run_train.sh
 
 Validation 設計：
 
-- 預設 validation prompt：`<road_rockfall_event>, large boulder blocking mountain highway, real photograph`
+- 預設 validation prompt：`zwxrockfall, large boulder blocking mountain highway, real photograph`
 - 預設每 10 steps 取 2 個 batch 計算 validation loss。
 - 預設跳過中途影像 validation，以降低 VRAM 使用。
 - 訓練結束時仍保留 final validation。
@@ -321,7 +321,7 @@ uv run python generate.py --setting both
 | Setting | 模型 | Prompt |
 | --- | --- | --- |
 | A | SD3.5 Medium base model | `prompts.json` 中的 base prompts，不加 trigger token |
-| B | SD3.5 Medium + LoRA | 在每個 base prompt 前加上 `<road_rockfall_event>` |
+| B | SD3.5 Medium + LoRA | 在每個 base prompt 前加上 `zwxrockfall` |
 
 生成設計：
 
@@ -451,7 +451,7 @@ GPU_ID=1 CKPT_STEPS=100 SKIP_EXISTING=1 ./run_experiments.sh
 
 `prompts.json` 包含：
 
-- `trigger_token`: `<road_rockfall_event>`
+- `trigger_token`: `zwxrockfall`
 - `base_prompts`: 10 個道路落石相關生成 prompt
 
 Prompt bank 的設計目標：
@@ -465,7 +465,7 @@ Prompt bank 的設計目標：
 範例 LoRA prompt：
 
 ```text
-<road_rockfall_event>, a realistic documentary photo of an empty two-lane mountain road completely blocked by natural irregular gray and tan boulders, jagged rock fragments, muddy gravel, wet asphalt, collapsed steep slope, no people, no vehicles, no signs
+zwxrockfall, a realistic documentary photo of an empty two-lane mountain road completely blocked by natural irregular gray and tan boulders, jagged rock fragments, muddy gravel, wet asphalt, collapsed steep slope, no people, no vehicles, no signs
 ```
 
 ## 模型與資料設計理念
@@ -494,7 +494,7 @@ Dense caption 讓訓練資料同時提供：
 
 ### 為什麼用 trigger token
 
-Trigger token 是把特定概念綁定到 LoRA 的控制介面。訓練時所有 caption 都以 `<road_rockfall_event>` 開頭，生成時只要在 prompt 前加上這個 token，就能提示 LoRA 啟動該概念。
+Trigger token 是把特定概念綁定到 LoRA 的控制介面。訓練時所有 caption 都以 `zwxrockfall` 開頭，生成時只要在 prompt 前加上這個 token，就能提示 LoRA 啟動該概念。
 
 這樣的設計讓比較實驗更乾淨：
 
