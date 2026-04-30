@@ -18,6 +18,9 @@ export CUDA_DEVICE_ORDER="${CUDA_DEVICE_ORDER:-PCI_BUS_ID}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/.venv/bin/activate"
 
+# Run from the repository root so default relative paths resolve consistently.
+cd "${SCRIPT_DIR}"
+
 # Set MIN_DATA=1 to do a quick sanity check on a tiny subset.
 # This keeps the full training path unchanged when MIN_DATA is unset or 0.
 MIN_DATA="${MIN_DATA:-0}"
@@ -102,7 +105,7 @@ distributed_type: 'NO'
 downcast_bf16: 'no'
 machine_rank: 0
 main_training_function: main
-mixed_precision: fp16
+mixed_precision: bf16
 num_machines: 1
 num_processes: 1
 rdzv_backend: static
@@ -119,10 +122,15 @@ fi
 # --------------------------------------------------------------------------
 MODEL_ID="${MODEL_ID:-stabilityai/stable-diffusion-3.5-medium}"
 INSTANCE_DATA_DIR="${INSTANCE_DATA_DIR:-training_data}"
-OUTPUT_DIR="${OUTPUT_DIR:-lora_output}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-experiments}"
+OUTPUT_DIR="${OUTPUT_DIR:-}"
+LOG_ROOT="${LOG_ROOT:-experiment_logs}"
 LOGGING_DIR="${LOGGING_DIR:-logs}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-}"
+RUN_LOG_FILE="${RUN_LOG_FILE:-}"
+AUTO_TEE_LOG="${AUTO_TEE_LOG:-1}"
 TRIGGER_TOKEN="${TRIGGER_TOKEN:-zwxrockfall}"
-METADATA_JSONL="${METADATA_JSONL:-}"
+METADATA_JSONL="${METADATA_JSONL:-metadata.jsonl}"
 SKIP_INTERMEDIATE_VALIDATION="${SKIP_INTERMEDIATE_VALIDATION:-1}"
 VALIDATION_LOSS_STEPS="${VALIDATION_LOSS_STEPS:-10}"
 VALIDATION_LOSS_NUM_BATCHES="${VALIDATION_LOSS_NUM_BATCHES:-2}"
@@ -132,19 +140,31 @@ INSTANCE_PROMPT="${INSTANCE_PROMPT:-${TRIGGER_TOKEN}, road blocked by rockfall d
 VALIDATION_PROMPT="${VALIDATION_PROMPT:-${TRIGGER_TOKEN}, large boulder blocking mountain highway, real photograph}"
 VALIDATION_INFER_STEPS="${VALIDATION_INFER_STEPS:-20}"
 
-RESOLUTION="${RESOLUTION:-1024}"
+RESOLUTION="${RESOLUTION:-512}"
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-4}"            # effective batch = 4
 LR="${LR:-1e-4}"
 LR_WARMUP="${LR_WARMUP:-100}"
 MAX_STEPS="${MAX_STEPS:-600}"
-RANK="${RANK:-16}"                       # LoRA rank; 16 is a good balance for ~90 images
+RANK="${RANK:-16}"
 CKPT_STEPS="${CKPT_STEPS:-100}"           # save every 100 steps
 SEED="${SEED:-42}"
+MIXED_PRECISION="${MIXED_PRECISION:-bf16}"
+
+WITH_PRIOR_PRESERVATION="${WITH_PRIOR_PRESERVATION:-1}"
+CLASS_DATA_DIR="${CLASS_DATA_DIR:-class_data}"
+CLASS_PROMPT="${CLASS_PROMPT:-realistic photograph of a rockfall event on an asphalt mountain road, fallen boulders and small rock fragments scattered on the driving lane, visible lane markings, rocky hillside, outdoor daylight}"
+CLASS_NEGATIVE_PROMPT="${CLASS_NEGATIVE_PROMPT:-empty road, clean road, no rocks on road, rocks only on roadside, rocks only on hillside, traffic cone, construction cone, people, vehicle, cartoon, anime, painting, 3d render, cgi, blurry, low quality, text, watermark}"
+NUM_CLASS_IMAGES="${NUM_CLASS_IMAGES:-100}"
+PRIOR_LOSS_WEIGHT="${PRIOR_LOSS_WEIGHT:-1.0}"
+SAMPLE_BATCH_SIZE="${SAMPLE_BATCH_SIZE:-1}"
+PRIOR_GENERATION_PRECISION="${PRIOR_GENERATION_PRECISION:-bf16}"
 
 if [ "${MIN_DATA}" = "1" ]; then
     INSTANCE_DATA_DIR="training_data_min"
-    OUTPUT_DIR="lora_output_min"
+    if [ -z "${OUTPUT_DIR}" ]; then
+        OUTPUT_DIR="${OUTPUT_ROOT}/min_data_smoke_test"
+    fi
     MAX_STEPS=15
     CKPT_STEPS=15
     echo "[*] MIN_DATA mode enabled: using a tiny subset and short training run"
@@ -177,6 +197,56 @@ if [ "${MIN_DATA}" = "1" ]; then
     VALIDATION_LOSS_STEPS="${VALIDATION_LOSS_STEPS:-5}"
 fi
 
+ENABLE_PRIOR=0
+case "${WITH_PRIOR_PRESERVATION}" in
+    1|true|TRUE|yes|YES)
+        ENABLE_PRIOR=1
+        ;;
+    0|false|FALSE|no|NO)
+        ENABLE_PRIOR=0
+        ;;
+    *)
+        echo "[ERROR] WITH_PRIOR_PRESERVATION must be one of: 1/0/true/false/yes/no"
+        exit 1
+        ;;
+esac
+
+PRIOR_ARGS=()
+if [ "${ENABLE_PRIOR}" = "1" ]; then
+    mkdir -p "${CLASS_DATA_DIR}"
+    PRIOR_ARGS=(
+        --with_prior_preservation
+        --class_data_dir="${CLASS_DATA_DIR}"
+        --class_prompt="${CLASS_PROMPT}"
+        --class_negative_prompt="${CLASS_NEGATIVE_PROMPT}"
+        --num_class_images=${NUM_CLASS_IMAGES}
+        --prior_loss_weight=${PRIOR_LOSS_WEIGHT}
+        --sample_batch_size=${SAMPLE_BATCH_SIZE}
+        --prior_generation_precision="${PRIOR_GENERATION_PRECISION}"
+    )
+fi
+
+if [ -z "${EXPERIMENT_NAME}" ] && [ -n "${OUTPUT_DIR}" ]; then
+    EXPERIMENT_NAME="$(basename "${OUTPUT_DIR}")"
+fi
+
+if [ -z "${EXPERIMENT_NAME}" ]; then
+    if [ "${ENABLE_PRIOR}" = "1" ]; then
+        EXPERIMENT_NAME="prior_$(basename "${CLASS_DATA_DIR}")_${MIXED_PRECISION}_rank${RANK}_lr${LR}_steps${MAX_STEPS}"
+    else
+        EXPERIMENT_NAME="baseline_${MIXED_PRECISION}_rank${RANK}_lr${LR}_steps${MAX_STEPS}"
+    fi
+fi
+
+if [ -z "${OUTPUT_DIR}" ]; then
+    OUTPUT_DIR="${OUTPUT_ROOT}/${EXPERIMENT_NAME}"
+fi
+
+TIMESTAMP="${TIMESTAMP:-$(date +%Y%m%d_%H%M%S)}"
+if [ -z "${RUN_LOG_FILE}" ]; then
+    RUN_LOG_FILE="${LOG_ROOT}/${TIMESTAMP}_${EXPERIMENT_NAME}.log"
+fi
+
 VALIDATION_ARGS=(
     --validation_prompt="${VALIDATION_PROMPT}"
     --num_validation_images=1
@@ -194,6 +264,12 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/${LOGGING_DIR}"
+mkdir -p "${LOG_ROOT}"
+
+if [ "${AUTO_TEE_LOG}" = "1" ] && [ -z "${RUN_TRAIN_TEE_ACTIVE:-}" ]; then
+    export RUN_TRAIN_TEE_ACTIVE=1
+    exec > >(tee -a "${RUN_LOG_FILE}") 2>&1
+fi
 
 TRAIN_DATA_ARGS=(--instance_data_dir="${INSTANCE_DATA_DIR}")
 if [ -n "${METADATA_JSONL}" ]; then
@@ -245,8 +321,17 @@ echo "           accelerate logical device=0 (masked single GPU)"
 echo "  Data   : ${INSTANCE_DATA_DIR}"
 echo "  Output : ${OUTPUT_DIR}"
 echo "  TB Logs: ${OUTPUT_DIR}/${LOGGING_DIR}"
+echo "  Log    : ${RUN_LOG_FILE}"
 echo "  Trigger: ${TRIGGER_TOKEN}"
 echo "  Steps  : ${MAX_STEPS}  (LR=${LR}, Rank=${RANK}, CKPT=${CKPT_STEPS})"
+if [ "${ENABLE_PRIOR}" = "1" ]; then
+    echo "  Prior  : enabled (class_prompt='${CLASS_PROMPT}', class_images=${NUM_CLASS_IMAGES}, prior_w=${PRIOR_LOSS_WEIGHT})"
+    echo "           class_negative_prompt='${CLASS_NEGATIVE_PROMPT}'"
+    echo "           class_data_dir=${CLASS_DATA_DIR}"
+    echo "           sample_batch_size=${SAMPLE_BATCH_SIZE}, prior_generation_precision=${PRIOR_GENERATION_PRECISION}"
+else
+    echo "  Prior  : disabled"
+fi
 echo "  ValLoss: every ${VALIDATION_LOSS_STEPS} steps, ${VALIDATION_LOSS_NUM_BATCHES} batch(es)"
 echo "  ValImg : skip_intermediate=${SKIP_INTERMEDIATE_VALIDATION}, final_validation=enabled"
 echo "================================================================"
@@ -259,8 +344,9 @@ export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 accelerate launch "${TRAIN_SCRIPT}" \
     --pretrained_model_name_or_path="${MODEL_ID}" \
     "${TRAIN_DATA_ARGS[@]}" \
+    "${PRIOR_ARGS[@]}" \
     --output_dir="${OUTPUT_DIR}" \
-    --mixed_precision="fp16" \
+    --mixed_precision="${MIXED_PRECISION}" \
     --instance_prompt="${INSTANCE_PROMPT}" \
     --resolution=${RESOLUTION} \
     --train_batch_size=${TRAIN_BATCH_SIZE} \
@@ -280,4 +366,5 @@ accelerate launch "${TRAIN_SCRIPT}" \
 echo "================================================================"
 echo "  Training complete!  LoRA weights → ${OUTPUT_DIR}/"
 echo "  To view TensorBoard: tensorboard --logdir ${OUTPUT_DIR}/${LOGGING_DIR}"
+echo "  Console log saved to: ${RUN_LOG_FILE}"
 echo "================================================================"

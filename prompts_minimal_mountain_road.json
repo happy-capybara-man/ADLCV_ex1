@@ -1,6 +1,9 @@
 {
   "trigger_token": "zwxrockfall,",
   "base_prompts": [
-    "a mountain road"
+    "a mountain road",
+    "a mountain road blocked by rocks",
+    "a mountain road with rockfall debris",
+    "rockfall blocking a mountain road, real photo"
   ]
 }

@@ -37,15 +37,21 @@ HEIGHT = WIDTH  = 1024
 def build_prompts(
     prompts_file: str,
     prompt_suffix: str = "",
-) -> tuple[list[str], list[str]]:
+    max_prompts: int | None = None,
+) -> tuple[list[str], list[str], str | None]:
     with open(prompts_file) as f:
         data = json.load(f)
     raw_base = data.get("base_prompts") or data["test_prompts"]
+    if max_prompts is not None:
+        if max_prompts < 1:
+            raise ValueError("--max_prompts must be at least 1")
+        raw_base = raw_base[:max_prompts]
     suffix = prompt_suffix.strip()
     base = [f"{prompt}, {suffix}" if suffix else prompt for prompt in raw_base]
     trigger = str(data["trigger_token"]).strip().rstrip(",")
     lora = [f"{trigger}, {prompt}" if trigger else prompt for prompt in base]
-    return base, lora
+    negative_prompt = str(data.get("negative_prompt", "")).strip() or None
+    return base, lora, negative_prompt
 
 
 def discover_lora_dirs(
@@ -115,7 +121,10 @@ def load_pipeline(
 def write_generation_metadata(
     out_dir: Path,
     prompts: list[str],
+    negative_prompt: str | None,
     n_per_prompt: int,
+    height: int,
+    width: int,
     lora_dir: Path | None,
     lora_scale: float,
     label: str,
@@ -129,12 +138,13 @@ def write_generation_metadata(
         "lora_scale": lora_scale,
         "prompts_file": prompts_file,
         "prompt_suffix": prompt_suffix,
+        "negative_prompt": negative_prompt,
         "n_per_prompt": n_per_prompt,
         "seed_policy": "For each prompt, generate seeds 0..n_per_prompt-1",
         "num_inference_steps": INFERENCE_STEPS,
         "guidance_scale": GUIDANCE_SCALE,
-        "height": HEIGHT,
-        "width": WIDTH,
+        "height": height,
+        "width": width,
         "prompts": prompts,
     }
     with (out_dir / "generation_config.json").open("w") as f:
@@ -145,6 +155,9 @@ def generate_setting(
     prompts: list[str],
     out_dir: Path,
     n_per_prompt: int,
+    negative_prompt: str | None = None,
+    height: int = HEIGHT,
+    width: int = WIDTH,
     lora_dir: Path | None = None,
     label: str | None = None,
     lora_scale: float = 1.0,
@@ -168,7 +181,10 @@ def generate_setting(
     write_generation_metadata(
         out_dir=out_dir,
         prompts=prompts,
+        negative_prompt=negative_prompt,
         n_per_prompt=n_per_prompt,
+        height=height,
+        width=width,
         lora_dir=lora_dir,
         lora_scale=lora_scale,
         label=setting_label,
@@ -190,11 +206,12 @@ def generate_setting(
             generator = torch.Generator("cuda").manual_seed(seed)
             image = pipe(
                 prompt=prompt,
+                negative_prompt=negative_prompt,
                 num_inference_steps=INFERENCE_STEPS,
                 guidance_scale=GUIDANCE_SCALE,
                 generator=generator,
-                height=HEIGHT,
-                width=WIDTH,
+                height=height,
+                width=width,
             ).images[0]
 
             fname = out_dir / f"{stem}.jpg"
@@ -249,6 +266,12 @@ def parse_args() -> argparse.Namespace:
         help=f"Images to generate per prompt, using seed IDs 0..N-1 (default: {N_PER_PROMPT})",
     )
     ap.add_argument(
+        "--max_prompts",
+        type=int,
+        default=None,
+        help="Use only the first N prompts from the prompts JSON",
+    )
+    ap.add_argument(
         "--experiments_dir",
         type=Path,
         default=EXPERIMENTS_DIR,
@@ -297,12 +320,28 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Text appended to every base prompt before adding the trigger token",
     )
+    ap.add_argument(
+        "--height",
+        type=int,
+        default=HEIGHT,
+        help=f"Image height (default: {HEIGHT})",
+    )
+    ap.add_argument(
+        "--width",
+        type=int,
+        default=WIDTH,
+        help=f"Image width (default: {WIDTH})",
+    )
     return ap.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    base_prompts, lora_prompts = build_prompts(args.prompts_file, args.prompt_suffix)
+    base_prompts, lora_prompts, negative_prompt = build_prompts(
+        args.prompts_file,
+        args.prompt_suffix,
+        args.max_prompts,
+    )
     output_base = args.output_base
 
     if args.lora_dir is not None:
@@ -312,6 +351,9 @@ def main() -> None:
             prompts=lora_prompts,
             out_dir=args.output_dir,
             n_per_prompt=args.n_per_prompt,
+            negative_prompt=negative_prompt,
+            height=args.height,
+            width=args.width,
             lora_dir=args.lora_dir,
             label=f"LoRA  ({args.lora_dir}) scale={args.lora_scale}",
             lora_scale=args.lora_scale,
@@ -326,6 +368,9 @@ def main() -> None:
             prompts=base_prompts,
             out_dir=output_base / "setting_a",
             n_per_prompt=args.n_per_prompt,
+            negative_prompt=negative_prompt,
+            height=args.height,
+            width=args.width,
             label="A  (base model)",
             prompts_file=args.prompts_file,
             prompt_suffix=args.prompt_suffix,
@@ -336,6 +381,9 @@ def main() -> None:
             prompts=lora_prompts,
             out_dir=output_base / "setting_b",
             n_per_prompt=args.n_per_prompt,
+            negative_prompt=negative_prompt,
+            height=args.height,
+            width=args.width,
             lora_dir=Path(LORA_DIR),
             label="B  (default LoRA)",
             lora_scale=args.lora_scale,
@@ -355,6 +403,9 @@ def main() -> None:
                 prompts=lora_prompts,
                 out_dir=output_base / "experiments" / relative_name,
                 n_per_prompt=args.n_per_prompt,
+                negative_prompt=negative_prompt,
+                height=args.height,
+                width=args.width,
                 lora_dir=lora_dir,
                 label=f"Experiment LoRA  ({relative_name})",
                 lora_scale=args.lora_scale,

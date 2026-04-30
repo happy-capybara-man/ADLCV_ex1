@@ -1,15 +1,25 @@
 {
-  "trigger_token": "zwxrockfall, ",
+  "trigger_token": "zwxrockfall",
+  "class_prompt": "a documentary photo of a fresh rockfall blocking a mountain road, irregular natural boulders and fractured stones covering asphalt lanes, muddy gravel and soil, visible lane markings, steep rocky slope or forested hillside source, realistic overcast disaster scene",
+  "negative_prompt": "clean empty road, no rockfall, rocks only on roadside or hillside, decorative stones, cones, road signs, people, workers, vehicles, excavators, saturated or neon colors, sunset, cinematic lighting, cartoon, anime, illustration, painting, 3d render, CGI, blurry, low quality, text, watermark",
   "base_prompts": [
-    "a realistic documentary photo of an empty two-lane mountain road completely blocked by natural irregular gray and tan boulders, jagged rock fragments, muddy gravel, wet asphalt, collapsed steep slope, no people, no vehicles, no signs",
-    "an empty winding asphalt road carved into a steep forested mountainside, fresh natural rockfall spilling from an exposed cliff face across both lanes, rough irregular stones, dust in the air, overcast daylight, real photograph",
-    "massive natural angular boulders and scattered gravel covering a narrow mountain highway, yellow lane markings partly buried under wet mud and rock debris, steep rocky slope above, ground-level documentary photo, no traffic",
-    "a wet mountain road partially blocked by fresh natural rockfall from a steep hillside, irregular gray and reddish-brown boulders with muddy gravel scattered across both lanes, yellow center lines partly buried, misty overcast daylight, realistic documentary photograph, no people, no vehicles, no warning signs",
-    "large reddish-brown natural boulders fallen from a canyon wall onto a curved empty road, dusty asphalt, loose gravel, sparse vegetation on steep slopes, realistic highway rockfall photo, no cars, no people",
-    "a mountain road fully obstructed by a fresh landslide of irregular rocks, wet mud, gravel, and fractured stone from the hillside, quiet blocked roadway, natural debris only, documentary real photograph",
-    "a close low-angle view of rough fractured natural rocks and gravel covering wet asphalt, cracked road surface beneath the debris, collapsed steep slope in the background, realistic photo, no text, no manmade objects",
-    "a wide slightly elevated view of a major natural rockfall blocking an empty mountain highway, uneven gray boulders and brown muddy debris across both lanes, hazy daylight, realistic documentary photograph, no vehicles",
-    "a coastal cliff road blocked by pale tan natural boulders and smaller rock fragments, dust and wet sediment across the shoulder, muted natural light, real photograph, no signs, no cones, no people",
-    "a severe rockfall scene on a mountain road beside a river, both lanes buried under natural gray rocks and muddy debris, exposed unstable cliff face, overcast documentary photo, empty road, no vehicles, no workers"
+    "a mountain road completely blocked by massive irregular boulders, a fresh rockfall covering both asphalt lanes. Documentary photo, wet road, steep rocky slope in the background",
+    "a winding mountain road partly blocked by a fresh rockfall, medium boulders and fractured stones across the left lane and center line. Documentary photo, forested hillside, overcast light",
+    "a mountain highway buried under dense angular rocks, large boulders stacked across the full road width. Documentary photo, muddy asphalt, exposed roadside rock face",
+    "a narrow forest road blocked at a curve by rounded boulders from a steep vegetated slope. Documentary photo, loose gravel and broken branches on the asphalt",
+    "a close road-level view of a fresh rockfall on asphalt, one large boulder in the foreground with fractured stones and muddy gravel trailing behind. Documentary photo",
+    "a wet mountain road crossed by a rockslide from the left hillside, blocky boulders, soil, and roots spread over the center lines. Documentary photo, misty background",
+    "a canyon mountain road blocked below a steep rock wall, heavy natural boulders clustered across both lanes. Documentary photo, guardrail and distant gorge road",
+    "a road beside a retaining wall blocked by flat rock slabs and blocky boulders, a dense debris pile covering one lane. Documentary photo, muddy sediment between stones",
+    "a narrow mountain road beside a vertical rock wall blocked by mixed-size boulders, scattered gravel covering the shoulder and lane markings. Documentary roadside photo",
+    "a highway curve narrowed by a right-side rockfall, jagged slabs and coarse gravel spreading from the shoulder into the lane. Documentary photo, shiny wet asphalt",
+    "a partial rockfall blockage on a mountain road, several separate boulders positioned at different distances across the asphalt. Documentary photo, retaining wall and rocky slope nearby",
+    "a forest mountain pass blocked by massive boulders and angular fragments, mud and fallen leaves mixed across the road center. Documentary photo, muted natural colors",
+    "a tunnel approach on a mountain road blocked by huge rock slabs and broken gravel, rectangular boulders across the foreground asphalt. Documentary photo, dark tunnel opening behind",
+    "a broad field of gray and tan rock fragments blanketing a mountain road, large slabs in the foreground and only a narrow strip of asphalt visible. Documentary photo",
+    "a rainy mountain road blocked by mixed rockfall debris, brown soil, muddy gravel, and medium boulders crossing one lane. Documentary photo, wet reflections, forested slope",
+    "a curving mountain highway with a fresh rockfall on the right lane, flat slabs and irregular boulders piled at the road edge. Documentary photo, opposite guardrail, hazy daylight",
+    "an unoccupied mountain road with discrete boulders and small stones scattered across both lanes after a minor rockfall. Documentary photo, steep hillside source, cloudy daylight",
+    "a river gorge mountain road blocked by fractured rocks and muddy debris on the near lane and shoulder. Documentary photo, damaged guardrail, muted mountain scenery"
   ]
 }

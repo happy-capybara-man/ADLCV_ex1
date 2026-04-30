@@ -21,6 +21,8 @@ experiments/
 experiment_logs/
 lora_output/
 lora_output_min/
+gen_img/
+final_gen
 generated_images/
 generated_preview_lora/
 eval_results/
@@ -31,4 +33,8 @@ training_data_min/
 training_data_min_tbtest/
 training_data_smoketest/
 training_data_smoketest2/
+class_data/*
+!class_data/*generation_config.json
+
+report/
 

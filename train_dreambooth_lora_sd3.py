@@ -77,6 +77,8 @@ if is_wandb_available():
 
 logger = get_logger(__name__)
 
+IMAGE_FILE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
 
 def save_model_card(
     repo_id: str,
@@ -344,6 +346,12 @@ def parse_args(input_args=None):
         type=str,
         default=None,
         help="The prompt to specify images in the same class as provided instance images.",
+    )
+    parser.add_argument(
+        "--class_negative_prompt",
+        type=str,
+        default=None,
+        help="The negative prompt used when generating class images for prior preservation.",
     )
     parser.add_argument(
         "--max_sequence_length",
@@ -881,7 +889,14 @@ class DreamBoothDataset(Dataset):
         if class_data_root is not None:
             self.class_data_root = Path(class_data_root)
             self.class_data_root.mkdir(parents=True, exist_ok=True)
-            self.class_images_path = list(self.class_data_root.iterdir())
+            self.class_images_path = sorted(
+                path for path in self.class_data_root.iterdir() if path.is_file() and path.suffix.lower() in IMAGE_FILE_EXTENSIONS
+            )
+            if not self.class_images_path:
+                raise ValueError(
+                    f"No image files found in class_data_root={self.class_data_root}. "
+                    f"Supported extensions: {sorted(IMAGE_FILE_EXTENSIONS)}"
+                )
             if class_num is not None:
                 self.num_class_images = min(len(self.class_images_path), class_num)
             else:
@@ -1190,7 +1205,16 @@ def main(args):
             for example in tqdm(
                 sample_dataloader, desc="Generating class images", disable=not accelerator.is_local_main_process
             ):
-                images = pipeline(example["prompt"]).images
+                negative_prompt = None
+                if args.class_negative_prompt:
+                    negative_prompt = [args.class_negative_prompt] * len(example["prompt"])
+
+                images = pipeline(
+                    example["prompt"],
+                    negative_prompt=negative_prompt,
+                    height=args.resolution,
+                    width=args.resolution,
+                ).images
 
                 for i, image in enumerate(images):
                     hash_image = insecure_hashlib.sha1(image.tobytes()).hexdigest()

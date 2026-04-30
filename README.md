@@ -77,7 +77,7 @@ ADLCV_ex1/
 | `run_experiments.sh` | 批次執行多組 LoRA rank / learning rate 實驗，並將輸出與 log 分開保存。 |
 | `generate.py` | 產生 base model 與 LoRA model 兩組對照影像。 |
 | `evaluate.py` | 使用 CLIP Score 與 KID 評估生成影像品質。 |
-| `prompts.json` | 評估/生成用 prompt bank，含 trigger token 與 10 個 base prompts。 |
+| `prompts.json` | 評估/生成用 prompt bank，含 trigger token、class prompt、negative prompt 與多個 base prompts。 |
 | `train_dreambooth_lora_sd3.py` | Hugging Face diffusers 官方 SD3 DreamBooth LoRA 訓練腳本。若缺少，`run_train.sh` 會自動下載。 |
 
 ## 環境與依賴
@@ -343,6 +343,138 @@ generated_images/setting_b/
 
 `generated_images/` 目前已加入 `.gitignore`，新的生成結果不會自動進入 git。
 
+### 最終提交版本重現
+
+本次最後決定提交的版本不是早期的 `setting_b`，而是以下這條實驗分支：
+
+- 訓練輸出：`experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600`
+- Class image 設定：`class_data/custom_rockfall_v1_generation_config.json`
+- 生成 prompt：`old_prompt_dirty_realistic_short.json`
+- 生成 LoRA scale：`0.8`
+- 正式輸出目錄：`generated_images/experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600_dirty_realistic_short_lora0.8_seed0to29`
+
+需要注意的是，這個最終版本有開啟 text encoder fine-tuning，而目前 `run_train.sh` 沒有把 `--train_text_encoder` 與 `--text_encoder_lr` 暴露成 shell 參數；因此若要**精確重現**最後提交版本，應直接呼叫 `train_dreambooth_lora_sd3.py`。
+
+1. 啟動環境
+
+```bash
+cd /home/willyfr4214/hw/ADLCV/ADLCV_ex1
+source .venv/bin/activate
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export CUDA_VISIBLE_DEVICES=0
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+```
+
+2. 訓練最終提交版本
+
+```bash
+accelerate launch train_dreambooth_lora_sd3.py \
+	--pretrained_model_name_or_path=stabilityai/stable-diffusion-3.5-medium \
+	--dataset_name=training_data \
+	--caption_column=text \
+	--output_dir=experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600 \
+	--mixed_precision=bf16 \
+	--instance_prompt="zwxrockfall, road blocked by rockfall debris, real photograph, outdoor" \
+	--resolution=512 \
+	--train_batch_size=1 \
+	--gradient_accumulation_steps=4 \
+	--gradient_checkpointing \
+	--learning_rate=1e-4 \
+	--text_encoder_lr=5e-6 \
+	--train_text_encoder \
+	--lr_scheduler=cosine \
+	--lr_warmup_steps=100 \
+	--max_train_steps=600 \
+	--rank=16 \
+	--checkpointing_steps=200 \
+	--seed=42 \
+	--with_prior_preservation \
+	--class_data_dir=class_data \
+	--class_prompt="realistic photograph of a rockfall event on an asphalt mountain road, fallen boulders and small rock fragments scattered on the driving lane, visible lane markings, rocky hillside, outdoor daylight" \
+	--class_negative_prompt="empty road, clean road, no rocks on road, rocks only on roadside, rocks only on hillside, traffic cone, construction cone, people, vehicle, cartoon, anime, painting, 3d render, cgi, blurry, low quality, text, watermark" \
+	--num_class_images=100 \
+	--prior_loss_weight=1.0 \
+	--sample_batch_size=1 \
+	--prior_generation_precision=bf16 \
+	--validation_prompt="zwxrockfall, large boulder blocking mountain highway, real photograph" \
+	--num_validation_images=1 \
+	--validation_num_inference_steps=20 \
+	--validation_epochs=20 \
+	--validation_loss_steps=10 \
+	--validation_loss_num_batches=2 \
+	--skip_intermediate_validation \
+	--final_validation_cpu_offload \
+	--logging_dir=logs \
+	--report_to=tensorboard
+```
+
+最終訓練設定摘要：
+
+| 項目 | 值 |
+| --- | --- |
+| Base model | `stabilityai/stable-diffusion-3.5-medium` |
+| Method | DreamBooth LoRA + text encoder fine-tuning |
+| Mixed precision | `bf16` |
+| Resolution | `512` |
+| Rank | `16` |
+| Transformer LR | `1e-4` |
+| Text encoder LR | `5e-6` |
+| Max steps | `600` |
+| Checkpoint steps | `200` |
+| Prior preservation | enabled |
+| Class prompt | `realistic photograph of a rockfall event on an asphalt mountain road, fallen boulders and small rock fragments scattered on the driving lane, visible lane markings, rocky hillside, outdoor daylight` |
+| Class negative prompt | `empty road, clean road, no rocks on road, rocks only on roadside, rocks only on hillside, traffic cone, construction cone, people, vehicle, cartoon, anime, painting, 3d render, cgi, blurry, low quality, text, watermark` |
+| Class data config | `class_data/custom_rockfall_v1_generation_config.json` |
+| Class images | `100` |
+| Prior loss weight | `1.0` |
+| Train batch size | `1` |
+| Gradient accumulation | `4` |
+| Seed | `42` |
+
+3. 先做單 seed 檢查圖
+
+```bash
+./.venv/bin/python generate.py \
+	--lora_dir experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600 \
+	--output_dir generated_images/experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600_dirty_realistic_short_lora0.8_seed0 \
+	--prompts_file old_prompt_dirty_realistic_short.json \
+	--n_per_prompt 1 \
+	--lora_scale 0.8
+```
+
+4. 生成正式提交用 300 張圖
+
+```bash
+./.venv/bin/python generate.py \
+	--lora_dir experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600 \
+	--output_dir generated_images/experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600_dirty_realistic_short_lora0.8_seed0to29 \
+	--prompts_file old_prompt_dirty_realistic_short.json \
+	--n_per_prompt 30 \
+	--lora_scale 0.8
+```
+
+這個最終版本的生成設定如下：
+
+- Prompt 數量：`10`
+- 每個 prompt seeds：`30`
+- 總輸出張數：`300`
+- Prompt file：`old_prompt_dirty_realistic_short.json`
+- Negative prompt：使用 `old_prompt_dirty_realistic_short.json` 內的 `negative_prompt`
+- LoRA scale：`0.8`
+- Inference steps：`28`
+- Guidance scale：`7.0`
+- Output size：`1024x1024`
+
+5. 評估最終提交版本
+
+```bash
+./.venv/bin/python evaluate.py \
+	--generated_dir generated_images/experiments/prior_textenc_bf16_rank16_lr1e-4_te5e-6_steps600_dirty_realistic_short_lora0.8_seed0to29 \
+	--real_dir training_data
+```
+
+`evaluate.py` 會自動從 `generation_config.json` 讀回 prompt file，因此這一步通常不需要另外指定 `--prompts_file`。
+
 ### Phase 5: 評估
 
 `evaluate.py` 會比較 base model 與 LoRA model 的生成結果。
@@ -452,7 +584,9 @@ GPU_ID=1 CKPT_STEPS=100 SKIP_EXISTING=1 ./run_experiments.sh
 `prompts.json` 包含：
 
 - `trigger_token`: `zwxrockfall`
-- `base_prompts`: 10 個道路落石相關生成 prompt
+- `class_prompt`: prior/class image 生成用的通用道路落石描述
+- `negative_prompt`: 排除乾淨道路、車輛、人物、標誌、coastal cliff 與過度鮮豔風格
+- `base_prompts`: 多個道路落石相關生成 prompt
 
 Prompt bank 的設計目標：
 
@@ -606,6 +740,7 @@ eval_results/
 - SD3.5 Medium 需要 Hugging Face 授權，未接受 license 會導致模型下載失敗。
 - 訓練需要高 VRAM GPU；目前腳本預設檢查至少 20 GiB。
 - `generate.py` 使用 `torch.bfloat16` 並將模型放到 CUDA，沒有 GPU 時無法正常生成。
+- 若要生成最終提交版本的 `1024x1024`、`10 prompts x 30 seeds`，請先確認 GPU 沒有其他大型 CUDA 程序佔用；否則 `generate.py` 在把整個 SD3.5 pipeline 搬到 CUDA 時可能直接 OOM。
 - `evaluate.py` 的 CLIP Score 與 KID 預設使用 CUDA。
 - 目前主訓練資料夾是 `training_data/`；若重新整理資料，請確認圖片與 metadata 都在同一個資料夾中。
 - `generated_images/` 已被 ignore，但若歷史 commit 中已追蹤過某些生成圖，`.gitignore` 不會自動把已追蹤檔案移出版本控制。

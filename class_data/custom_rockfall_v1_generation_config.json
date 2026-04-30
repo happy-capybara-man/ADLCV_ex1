@@ -1,0 +1,15 @@
+{
+  "model_id": "stabilityai/stable-diffusion-3.5-medium",
+  "prompt": "realistic photograph of a rockfall event on an asphalt mountain road, fallen boulders and small rock fragments scattered on the driving lane, visible lane markings, rocky hillside, outdoor daylight",
+  "negative_prompt": "empty road, clean road, no rocks on road, rocks only on roadside, rocks only on hillside, traffic cone, construction cone, people, vehicle, cartoon, anime, painting, 3d render, cgi, blurry, low quality, text, watermark",
+  "num_images": 100,
+  "num_inference_steps": 28,
+  "guidance_scale": 7.0,
+  "height": 1024,
+  "width": 1024,
+  "seed_range": [
+    0,
+    99
+  ],
+  "filename_prefix": "custom_rockfall_v1"
+}
